@@ -1,0 +1,181 @@
+
+<!DOCTYPE html>
+<html lang="pt">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Evolução interações email - total mercado</title>
+  <style>
+    :root{ --bg:#0b0b0f; --panel:#12121a; --text:#e8e8f0; --muted:#a8a8b8; --accent:#37d2ff; --accent2:#8f7bff; --good:#47d16a; --warn:#ffcc00; --bad:#ff5252; }
+    html,body{height:100%; margin:0; background:var(--bg); color:var(--text); font-family: Inter, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif;}
+    .wrap{max-width:1000px; margin:28px auto; padding:0 16px;}
+    .card{background:var(--panel); border:1px solid #1f1f2a; border-radius:16px; padding:18px 20px; box-shadow:0 10px 30px rgba(0,0,0,0.35);}
+    h1{font-size:26px; margin:10px 0 6px; background: linear-gradient(90deg, var(--accent), var(--accent2)); -webkit-background-clip:text; background-clip:text; color:transparent;}
+    p.lead{margin-top:0; color:var(--muted)}
+    .chart-wrap{position:relative;}
+    #chart{background:#0f0f16; border-radius:12px; border:1px solid #1e1e29;}
+    #drawOverlay{position:absolute; left:0; top:0; pointer-events:auto; }
+    .controls{display:flex; gap:12px; flex-wrap:wrap; align-items:center; margin-top:14px}
+    button{background:#1a1a26; color:var(--text); border:1px solid #2a2a3a; border-radius:10px; padding:10px 14px; cursor:pointer; font-weight:600;}
+    button:hover{border-color:#3b3b4f}
+    button.primary{background:linear-gradient(90deg,var(--accent),var(--accent2)); color:#0a0a0f; border:none;}
+    .hint{color:var(--muted); font-size:14px; margin-top:10px}
+    .pill{display:inline-block; background:#121222; border:1px solid #23233a; border-radius:999px; padding:6px 10px; font-size:12px; color:var(--muted)}
+    .badge{margin-left:auto; padding:8px 12px; border-radius:999px; font-weight:700; background:#141427; border:1px solid #26264a;}
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="card">
+      <h1>Evolução interações email - total mercado</h1>
+      <p class="lead">Desenha com o dedo (ou rato) a evolução esperada e compara com os dados reais. Período: 2015–2025.</p>
+      <div class="chart-wrap">
+        <canvas id="chart" width="960" height="520"></canvas>
+        <canvas id="drawOverlay" width="960" height="520"></canvas>
+      </div>
+      <div class="controls">
+        <button id="revealBtn" class="primary">Revelar dados reais</button>
+        <button id="resetBtn">Limpar desenho</button>
+        <button id="exportBtn">Exportar imagem</button>
+        <span class="pill">Dica: desenha apenas na parte sombreada (futuro)</span>
+        <span id="accuracyBadge" class="badge">🎯 Precisão: —</span>
+      </div>
+          </div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script>
+    const labels = ['2015','2016','2017','2018','2019','2020','2021','2022','2023','2024','2025*'];
+    const realData = [502, 507, 517, 609, 695, 1884, 1694, 1559, 1586, 1799, 1971];
+    const revealIndex = 4; // mostra 2015..2019; 2020..2025 ficam para o utilizador desenhar
+
+    const history = realData.map((v,i)=> i<=revealIndex ? v : null);
+    const userForecast = realData.map((v,i)=> i>revealIndex ? null : null);
+
+    const ctx = document.getElementById('chart').getContext('2d');
+    const chart = new Chart(ctx, {
+      type: 'line',
+      data: {
+        labels,
+        datasets: [
+          { label:'Histórico', data:history, borderColor:'#37d2ff', backgroundColor:'rgba(55,210,255,0.08)', borderWidth:3, tension:0.3, pointRadius:3 },
+          { label:'A tua previsão', data:userForecast, borderColor:'#ffcc00', backgroundColor:'rgba(255,204,0,0.08)', borderWidth:3, tension:0.25, pointRadius:0 },
+          { label:'Dados reais', data: realData.map((v,i)=> i>revealIndex ? v : null), borderColor:'#47d16a', backgroundColor:'rgba(71,209,106,0.08)', borderWidth:3, tension:0.25, pointRadius:3, hidden:true }
+        ]
+      },
+      options: {
+        responsive:false, maintainAspectRatio:false,
+        plugins:{ legend:{ labels:{ color:'#e8e8f0'}}, tooltip:{enabled:true}},
+        scales:{ x:{ ticks:{color:'#c9c9da'}, grid:{color:'rgba(255,255,255,0.07)'}}, y: {
+  min: 0,          // valor mínimo fixo
+  max: 2500,        // valor máximo fixo (ajusta conforme o teu caso)
+  ticks: { color:'#c9c9da' },
+  grid: { color:'rgba(255,255,255,0.07)' }
+
+}}
+      }
+    });
+
+    const overlay = document.getElementById('drawOverlay');
+    const octx = overlay.getContext('2d');
+    function rect(){ return overlay.getBoundingClientRect(); }
+    octx.lineWidth = 3; octx.strokeStyle = '#ffcc00'; octx.lineJoin='round'; octx.lineCap='round';
+    let drawing=false, last=null;
+
+    function toChartValue(clientX, clientY){
+      const r = rect(); const xPix = clientX - r.left; const yPix = clientY - r.top;
+      const xScale = chart.scales.x; const yScale = chart.scales.y;
+      const xValue = xScale.getValueForPixel(xPix); const yValue = yScale.getValueForPixel(yPix);
+      return { xPix, yPix, xValue, yValue };
+    }
+    function nearestIndex(xValue){
+      let idx = Math.round(xValue);
+      if (idx <= revealIndex) idx = revealIndex + 1;
+      if (idx >= labels.length) idx = labels.length - 1;
+      return idx;
+    }
+
+    function startDraw(e){
+      drawing = true;
+      const t = (e.touches && e.touches[0]) ? e.touches[0] : e;
+      const { xPix, yPix } = toChartValue(t.clientX, t.clientY);
+      last = { xPix, yPix };
+    }
+    function draw(e){
+      if (!drawing) return;
+      const t = (e.touches && e.touches[0]) ? e.touches[0] : e;
+      const pos = toChartValue(t.clientX, t.clientY);
+      octx.beginPath(); octx.moveTo(last ? last.xPix : pos.xPix, last ? last.yPix : pos.yPix);
+      octx.lineTo(pos.xPix, pos.yPix); octx.stroke();
+      last = { xPix: pos.xPix, yPix: pos.yPix };
+      const idx = nearestIndex(pos.xValue);
+      userForecast[idx] = pos.yValue; chart.update('none');
+    }
+    function endDraw(){ drawing=false; last=null; }
+
+    overlay.addEventListener('mousedown', startDraw);
+    overlay.addEventListener('mousemove', draw);
+    overlay.addEventListener('mouseup', endDraw);
+    overlay.addEventListener('mouseleave', endDraw);
+    overlay.addEventListener('touchstart', startDraw, {passive:true});
+    overlay.addEventListener('touchmove', draw, {passive:true});
+    overlay.addEventListener('touchend', endDraw);
+
+    function setBadge(accuracy){
+      const badge = document.getElementById('accuracyBadge');
+      let color = 'var(--bad)';
+      if (accuracy >= 90) color = 'var(--good)';
+      else if (accuracy >= 70) color = 'var(--warn)';
+      badge.style.borderColor = color;
+      badge.style.color = color;
+      badge.textContent = '🎯 Precisão: ' + accuracy.toFixed(1) + '%';
+    }
+
+    document.getElementById('revealBtn').addEventListener('click', ()=>{
+      chart.data.datasets[2].hidden = false;
+      for (let i=revealIndex+1; i<labels.length; i++){ if (userForecast[i] == null && userForecast[i-1] != null) userForecast[i] = userForecast[i-1]; }
+      chart.update();
+
+      let sumError = 0, count = 0;
+      for (let i=revealIndex+1; i<labels.length; i++) {
+        if (userForecast[i] != null && realData[i] != null && realData[i] !== 0) {
+          const error = Math.abs(realData[i] - userForecast[i]) / Math.abs(realData[i]);
+          sumError += error; count++;
+        }
+      }
+      const accuracy = count > 0 ? (100 - (sumError / count) * 100) : 0;
+      setBadge(accuracy);
+    });
+
+    document.getElementById('resetBtn').addEventListener('click', ()=>{
+      octx.clearRect(0,0,overlay.width, overlay.height);
+      for (let i=revealIndex+1; i<labels.length; i++) userForecast[i] = null;
+      chart.data.datasets[2].hidden = true; chart.update();
+      const badge = document.getElementById('accuracyBadge');
+      badge.textContent = '🎯 Precisão: —';
+      badge.style.color = '#e8e8f0';
+      badge.style.borderColor = '#26264a';
+    });
+
+    document.getElementById('exportBtn').addEventListener('click', ()=>{
+      const merged = document.createElement('canvas'); merged.width = overlay.width; merged.height = overlay.height;
+      const mctx = merged.getContext('2d'); mctx.drawImage(document.getElementById('chart'), 0, 0); mctx.drawImage(overlay, 0, 0);
+      const link = document.createElement('a'); link.download = 'draw_email_interacoes_total_acc.png'; link.href = merged.toDataURL('image/png'); link.click();
+    });
+
+    function shadeFuture(){
+      const xScale = chart.scales.x;
+      const startPix = xScale.getPixelForValue(revealIndex + 0.5);
+      const ctxChart = chart.ctx;
+      const chartArea = chart.chartArea;
+      ctxChart.save();
+      ctxChart.fillStyle = 'rgba(255,255,255,0.05)';
+      ctxChart.fillRect(startPix, chartArea.top, chartArea.right - startPix, chartArea.bottom - chartArea.top);
+      ctxChart.restore();
+    }
+    const _draw = chart.draw.bind(chart);
+    chart.draw = function(){ _draw(); shadeFuture(); };
+    chart.update();
+  </script>
+</body>
+</html>
